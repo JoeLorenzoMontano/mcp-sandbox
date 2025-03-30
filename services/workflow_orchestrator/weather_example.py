@@ -9,8 +9,10 @@ import asyncio
 import traceback
 import smithery
 import mcp
+import json
 from mcp.client.websocket import websocket_client
-# Import the types directly from mcp
+# Import the Smithery client module
+from smithery_client import call_smithery_agent
 from dotenv import load_dotenv
 import logging
 import argparse
@@ -125,15 +127,51 @@ async def get_weather(location, api_key=None, debug=False):
                     content={"content_type": "text", "parts": [{"type": "text", "text": prompt}]}
                 )
                 
-                # Send the message and get a response
-                logger.info(f"Sending prompt to weather agent: {prompt}")
-                response = await session.send_message(message)
+                # Instead of sending a message, we should call the appropriate tool
+                logger.info(f"Processing request for location: {location}")
                 
-                # Extract text from the response
-                response_text = ""
-                for part in response.content.parts:
-                    if part.type == "text":
-                        response_text += part.text
+                # For this weather example, we need lat/long coordinates
+                # For demonstration, use basic hardcoded coordinates
+                # In a real app, you'd use a geocoding service
+                
+                # McMinnville, OR is roughly at 45.21 N, -123.19 W
+                if location.lower() == "mcminnville":
+                    latitude = 45.21
+                    longitude = -123.19
+                else:
+                    # Default to a guess for demo purposes
+                    latitude = 40.0
+                    longitude = -100.0
+                    
+                logger.info(f"Using coordinates: {latitude}, {longitude}")
+                
+                try:
+                    # Call the tool directly using the simplified format
+                    logger.info("Calling get-forecast tool with coordinates")
+                    weather_result = await session.call_tool(
+                        "get-forecast", 
+                        {"latitude": latitude, "longitude": longitude}
+                    )
+                    
+                    logger.info(f"Get-forecast result type: {type(weather_result)}")
+                    logger.debug(f"Get-forecast result: {weather_result}")
+                    
+                    # Format the tool result as text
+                    response_text = f"Weather forecast for coordinates ({latitude}, {longitude}):\n\n{json.dumps(weather_result, indent=2, default=str)}"
+                    
+                except Exception as e:
+                    logger.error(f"Error calling get-forecast tool: {e}")
+                    logger.error(traceback.format_exc())
+                    
+                    # Fall back to sending a message
+                    logger.info(f"Falling back to sending general prompt: {prompt}")
+                    response = await session.send_message(message)
+                    
+                    # Extract text from the response
+                    response_text = ""
+                    for part in response.content.parts:
+                        if part.type == "text":
+                            response_text += part.text
                 
                 logger.info(f"Weather response: {response_text}")
                 print("\nWeather response:")

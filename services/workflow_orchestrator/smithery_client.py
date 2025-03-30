@@ -1,10 +1,11 @@
 import os
 import logging
 import traceback
+import json
 import smithery
 import mcp
 from mcp.client.websocket import websocket_client
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 
 # Configure logging
 logger = logging.getLogger("smithery_client")
@@ -138,7 +139,8 @@ async def connect_to_smithery(agent_id: str, params: Optional[Dict[str, Any]] = 
 async def call_smithery_agent(agent_id: str, prompt: str, 
                               params: Optional[Dict[str, Any]] = None,
                               api_key: Optional[str] = None,
-                              debug: bool = False) -> Dict[str, Any]:
+                              debug: bool = False,
+                              tool_call: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """
     Call a Smithery.ai agent with a prompt and get a response.
     
@@ -148,6 +150,8 @@ async def call_smithery_agent(agent_id: str, prompt: str,
         params (Dict[str, Any], optional): Parameters to pass to the Smithery agent
         api_key (str, optional): Override the environment API key
         debug (bool, optional): Enable debug logging
+        tool_call (Dict[str, Any], optional): If provided, calls a specific tool instead of sending a message
+                                             Format: {"name": "tool-name", "parameters": {...}}
     
     Returns:
         Dict[str, Any]: The response from the Smithery agent
@@ -252,35 +256,73 @@ async def call_smithery_agent(agent_id: str, prompt: str,
                     logger.info("No tools available")
                     available_tools = []
                 
-                # Send the prompt to the agent
-                logger.info(f"Sending prompt to agent: {prompt[:50]}...")
-                
-                # Create an MCP message with the prompt
-                logger.info("Creating MCP message...")
-                message = mcp.Message(
-                    role="user",
-                    content={"content_type": "text", "parts": [{"type": "text", "text": prompt}]}
-                )
-                
-                # Send the message and get a response
-                logger.info("Sending message to agent...")
-                response = await session.send_message(message)
-                
-                # Extract text from the response
-                response_text = ""
-                logger.info("Processing response...")
-                for part in response.content.parts:
-                    if part.type == "text":
-                        response_text += part.text
-                
-                logger.info(f"Successfully received response from agent (length: {len(response_text)})")
-                
-                return {
-                    "status": "success",
-                    "agent_id": agent_id,
-                    "response": response_text,
-                    "raw_response": response.dict()
-                }
+                # Check if we're making a tool call or sending a message
+                if tool_call:
+                    # Call a specific tool
+                    tool_name = tool_call.get("name")
+                    tool_params = tool_call.get("parameters", {})
+                    
+                    logger.info(f"Calling tool: {tool_name} with parameters: {tool_params}")
+                    
+                    # Call the tool with parameters
+                    try:
+                        tool_result = await session.call_tool(tool_name, tool_params)
+                        
+                        logger.info(f"Tool result received (type: {type(tool_result)})")
+                        logger.debug(f"Tool result: {tool_result}")
+                        
+                        # Format the result as text
+                        if isinstance(tool_result, (dict, list)):
+                            result_text = json.dumps(tool_result, indent=2)
+                        else:
+                            result_text = str(tool_result)
+                            
+                        return {
+                            "status": "success",
+                            "agent_id": agent_id,
+                            "tool_name": tool_name,
+                            "tool_result": tool_result,
+                            "response": f"Tool {tool_name} result:\n{result_text}"
+                        }
+                    except Exception as e:
+                        logger.error(f"Error calling tool {tool_name}: {e}")
+                        logger.error(traceback.format_exc())
+                        return {
+                            "status": "error",
+                            "agent_id": agent_id,
+                            "tool_name": tool_name,
+                            "error": f"Error calling tool: {e}"
+                        }
+                else:
+                    # Send a regular message
+                    logger.info(f"Sending prompt to agent: {prompt[:50]}...")
+                    
+                    # Create an MCP message with the prompt
+                    logger.info("Creating MCP message...")
+                    message = mcp.Message(
+                        role="user",
+                        content={"content_type": "text", "parts": [{"type": "text", "text": prompt}]}
+                    )
+                    
+                    # Send the message and get a response
+                    logger.info("Sending message to agent...")
+                    response = await session.send_message(message)
+                    
+                    # Extract text from the response
+                    response_text = ""
+                    logger.info("Processing response...")
+                    for part in response.content.parts:
+                        if part.type == "text":
+                            response_text += part.text
+                    
+                    logger.info(f"Successfully received response from agent (length: {len(response_text)})")
+                    
+                    return {
+                        "status": "success",
+                        "agent_id": agent_id,
+                        "response": response_text,
+                        "raw_response": response.dict()
+                    }
     except Exception as e:
         logger.error(f"Error calling Smithery agent {agent_id}: {str(e)}")
         logger.error(traceback.format_exc())

@@ -26,7 +26,7 @@ logger = logging.getLogger("smithery_test")
 # Load environment variables
 load_dotenv()
 
-async def test_smithery_connection(agent_id, prompt, api_key=None, params=None, debug=False):
+async def test_smithery_connection(agent_id, prompt, api_key=None, params=None, debug=False, tool_call=None):
     """
     Test connection to a Smithery.ai agent
     
@@ -134,35 +134,93 @@ async def test_smithery_connection(agent_id, prompt, api_key=None, params=None, 
                     logger.info("No tools available")
                     tool_names = []
                 
-                # Send a message to the agent
-                logger.info(f"Sending prompt: {prompt}")
-                
-                # Create an MCP message with the prompt
-                logger.info("Creating MCP message...")
-                message = mcp.Message(
-                    role="user",
-                    content={"content_type": "text", "parts": [{"type": "text", "text": prompt}]}
-                )
-                
-                # Send the message and get a response
-                logger.info("Sending message to agent...")
-                response = await session.send_message(message)
-                
-                # Extract text from the response
-                response_text = ""
-                logger.info("Processing response...")
-                for part in response.content.parts:
-                    if part.type == "text":
-                        response_text += part.text
+                # Check if we're calling a tool or sending a message
+                if tool_call:
+                    # Call a specific tool
+                    tool_name = tool_call.get("name")
+                    tool_params = tool_call.get("parameters", {})
+                    
+                    logger.info(f"Calling tool: {tool_name} with parameters: {tool_params}")
+                    
+                    try:
+                        # Call the tool directly using the simplified format
+                        tool_result = await session.call_tool(tool_name, tool_params)
+                        
+                        logger.info(f"Tool result type: {type(tool_result)}")
+                        logger.debug(f"Tool result: {tool_result}")
+                        
+                        # Format the result into a string
+                        if isinstance(tool_result, (dict, list)):
+                            response_text = json.dumps(tool_result, indent=2, default=str)
+                        else:
+                            response_text = str(tool_result)
+                        
+                        logger.info(f"Tool {tool_name} call successful")
+                        print(f"\nTool {tool_name} result:")
+                        print(response_text)
+                    except Exception as e:
+                        logger.error(f"Error calling tool {tool_name}: {e}")
+                        logger.error(traceback.format_exc())
+                        
+                        # Fall back to sending a message
+                        logger.info(f"Falling back to sending general prompt: {prompt}")
+                        
+                        # Create an MCP message with the prompt
+                        message = mcp.Message(
+                            role="user",
+                            content={"content_type": "text", "parts": [{"type": "text", "text": prompt}]}
+                        )
+                        
+                        # Send the message and get a response
+                        response = await session.send_message(message)
+                        
+                        # Extract text from the response
+                        response_text = ""
+                        logger.info("Processing response...")
+                        for part in response.content.parts:
+                            if part.type == "text":
+                                response_text += part.text
+                else:
+                    # Send a regular message
+                    logger.info(f"Sending prompt: {prompt}")
+                    
+                    # Create an MCP message with the prompt
+                    logger.info("Creating MCP message...")
+                    message = mcp.Message(
+                        role="user",
+                        content={"content_type": "text", "parts": [{"type": "text", "text": prompt}]}
+                    )
+                    
+                    # Send the message and get a response
+                    logger.info("Sending message to agent...")
+                    response = await session.send_message(message)
+                    
+                    # Extract text from the response
+                    response_text = ""
+                    logger.info("Processing response...")
+                    for part in response.content.parts:
+                        if part.type == "text":
+                            response_text += part.text
                 
                 logger.info(f"Response from agent: {response_text}")
                 
-                result = {
-                    "status": "success",
-                    "agent_id": agent_id,
-                    "available_tools": tool_names,
-                    "response": response_text
-                }
+                # Prepare the result based on whether we called a tool or sent a message
+                if tool_call and 'tool_result' in locals():
+                    result = {
+                        "status": "success",
+                        "agent_id": agent_id,
+                        "available_tools": tool_names,
+                        "tool_name": tool_call.get("name"),
+                        "tool_result": tool_result,
+                        "response": response_text
+                    }
+                else:
+                    result = {
+                        "status": "success",
+                        "agent_id": agent_id,
+                        "available_tools": tool_names,
+                        "response": response_text
+                    }
                 
                 print("\nResponse from Smithery agent:")
                 print("=" * 50)
@@ -187,15 +245,35 @@ if __name__ == "__main__":
     parser.add_argument("--api-key", help="Smithery API key (if not set in environment)")
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--output", help="Save response to file")
+    parser.add_argument("--tool", help="Tool name to call instead of sending a message")
+    parser.add_argument("--params", help="JSON string of parameters for the tool call")
     args = parser.parse_args()
     
     try:
+        # Prepare tool call if specified
+        tool_call = None
+        if args.tool:
+            tool_params = {}
+            if args.params:
+                try:
+                    tool_params = json.loads(args.params)
+                except json.JSONDecodeError:
+                    print(f"Error: Invalid JSON parameters: {args.params}")
+                    sys.exit(1)
+            
+            tool_call = {
+                "name": args.tool,
+                "parameters": tool_params
+            }
+            print(f"Calling tool: {args.tool} with parameters: {tool_params}")
+        
         # Run the test
         result = asyncio.run(test_smithery_connection(
             args.agent_id, 
             args.prompt, 
             args.api_key,
-            debug=args.debug
+            debug=args.debug,
+            tool_call=tool_call
         ))
         
         # Save result to file if specified
