@@ -4,7 +4,6 @@ import traceback
 import smithery
 import mcp
 from mcp.client.websocket import websocket_client
-from mcp.types import Content, Message, Part
 from typing import Dict, Any, Optional, List
 
 # Configure logging
@@ -258,17 +257,9 @@ async def call_smithery_agent(agent_id: str, prompt: str,
                 
                 # Create an MCP message with the prompt
                 logger.info("Creating MCP message...")
-                message = Message(
+                message = mcp.Message(
                     role="user",
-                    content=Content(
-                        content_type="text",
-                        parts=[
-                            Part(
-                                type="text", 
-                                text=prompt
-                            )
-                        ]
-                    )
+                    content={"content_type": "text", "parts": [{"type": "text", "text": prompt}]}
                 )
                 
                 # Send the message and get a response
