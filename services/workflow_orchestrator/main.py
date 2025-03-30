@@ -98,7 +98,8 @@ async def run_workflow(request: WorkflowRequest):
                     smithery_response = await call_smithery_agent(
                         agent_id=step.smithery_agent_id,
                         prompt=current_context,
-                        params=step.smithery_params
+                        params=step.smithery_params,
+                        debug=(os.getenv("LOG_LEVEL", "").upper() == "DEBUG")
                     )
                     
                     step_result = {
@@ -276,7 +277,8 @@ async def test_smithery_connection(request: SmitheryTestRequest):
         response = await call_smithery_agent(
             agent_id=request.agent_id,
             prompt=request.prompt,
-            params=request.params
+            params=request.params,
+            debug=(os.getenv("LOG_LEVEL", "").upper() == "DEBUG")
         )
         return response
     except Exception as e:
