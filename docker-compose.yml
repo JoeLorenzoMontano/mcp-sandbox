@@ -1,0 +1,44 @@
+services:
+  mcp_server:
+    build:
+      context: ./services/mcp_server
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./services/mcp_server:/app
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-llama3:latest}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  workflow_orchestrator:
+    build:
+      context: ./services/workflow_orchestrator
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./services/workflow_orchestrator:/app
+    depends_on:
+      - mcp_server
+    environment:
+      - MCP_SERVER_URL=http://mcp_server:8000
+      - EXTERNAL_MCP_SERVERS=${EXTERNAL_MCP_SERVERS:-}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+  mcp_client:
+    build:
+      context: ./services/mcp_client
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./services/mcp_client:/app
+    depends_on:
+      - workflow_orchestrator
+    environment:
+      - ORCHESTRATOR_URL=http://workflow_orchestrator:8001
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+
+volumes:
+  data:
