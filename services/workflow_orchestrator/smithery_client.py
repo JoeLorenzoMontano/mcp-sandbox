@@ -85,8 +85,34 @@ async def connect_to_smithery(agent_id: str, params: Optional[Dict[str, Any]] = 
                 # List available tools
                 logger.info("Listing available tools...")
                 tools_result = await session.list_tools()
-                available_tools = [t.name for t in tools_result]
-                logger.info(f"Available tools from Smithery agent: {', '.join(available_tools)}")
+                
+                # Handle different possible return formats
+                if tools_result:
+                    logger.debug(f"Tools result type: {type(tools_result)}")
+                    logger.debug(f"Tools result: {tools_result}")
+                    
+                    # Handle various formats of tool results
+                    available_tools = []
+                    if isinstance(tools_result, list):
+                        for tool in tools_result:
+                            if hasattr(tool, 'name'):
+                                available_tools.append(tool.name)
+                            elif isinstance(tool, dict) and 'name' in tool:
+                                available_tools.append(tool['name'])
+                            elif isinstance(tool, tuple) and len(tool) > 0:
+                                available_tools.append(str(tool[0]))
+                    elif isinstance(tools_result, tuple):
+                        # If it's a tuple, try to convert to strings
+                        available_tools = [str(t) for t in tools_result]
+                    
+                    if not available_tools:
+                        logger.warning("Could not extract tool names from result")
+                        logger.warning(f"Raw tools result: {tools_result}")
+                        
+                    logger.info(f"Available tools from Smithery agent: {', '.join(available_tools)}")
+                else:
+                    logger.info("No tools available from Smithery agent")
+                    available_tools = []
                 
                 # Return the session info and available tools
                 return {
@@ -179,8 +205,34 @@ async def call_smithery_agent(agent_id: str, prompt: str,
                 # List available tools
                 logger.info("Listing available tools...")
                 tools_result = await session.list_tools()
-                available_tools = [t.name for t in tools_result]
-                logger.info(f"Available tools: {', '.join(available_tools)}")
+                
+                # Handle different possible return formats
+                if tools_result:
+                    logger.debug(f"Tools result type: {type(tools_result)}")
+                    logger.debug(f"Tools result: {tools_result}")
+                    
+                    # Handle various formats of tool results
+                    available_tools = []
+                    if isinstance(tools_result, list):
+                        for tool in tools_result:
+                            if hasattr(tool, 'name'):
+                                available_tools.append(tool.name)
+                            elif isinstance(tool, dict) and 'name' in tool:
+                                available_tools.append(tool['name'])
+                            elif isinstance(tool, tuple) and len(tool) > 0:
+                                available_tools.append(str(tool[0]))
+                    elif isinstance(tools_result, tuple):
+                        # If it's a tuple, try to convert to strings
+                        available_tools = [str(t) for t in tools_result]
+                    
+                    if not available_tools:
+                        logger.warning("Could not extract tool names from result")
+                        logger.warning(f"Raw tools result: {tools_result}")
+                        
+                    logger.info(f"Available tools from Smithery agent: {', '.join(available_tools)}")
+                else:
+                    logger.info("No tools available from Smithery agent")
+                    available_tools = []
                 
                 # Send the prompt to the agent
                 logger.info(f"Sending prompt to agent: {prompt[:50]}...")

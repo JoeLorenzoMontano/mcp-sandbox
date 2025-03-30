@@ -96,8 +96,33 @@ async def test_smithery_connection(agent_id, prompt, api_key=None, params=None, 
                 # List available tools
                 logger.info("Listing available tools...")
                 tools_result = await session.list_tools()
-                tool_names = [t.name for t in tools_result]
-                logger.info(f"Available tools: {', '.join(tool_names)}")
+                
+                # Handle different possible return formats
+                if tools_result:
+                    logger.debug(f"Tools result type: {type(tools_result)}")
+                    logger.debug(f"Tools result: {tools_result}")
+                    
+                    # Handle various formats of tool results
+                    tool_names = []
+                    if isinstance(tools_result, list):
+                        for tool in tools_result:
+                            if hasattr(tool, 'name'):
+                                tool_names.append(tool.name)
+                            elif isinstance(tool, dict) and 'name' in tool:
+                                tool_names.append(tool['name'])
+                            elif isinstance(tool, tuple) and len(tool) > 0:
+                                tool_names.append(str(tool[0]))
+                    elif isinstance(tools_result, tuple):
+                        # If it's a tuple, try to convert to strings
+                        tool_names = [str(t) for t in tools_result]
+                    
+                    if not tool_names:
+                        logger.warning("Could not extract tool names from result")
+                        logger.warning(f"Raw tools result: {tools_result}")
+                        
+                    logger.info(f"Available tools: {', '.join(tool_names)}")
+                else:
+                    logger.info("No tools available")
                 
                 # Send a message to the agent
                 logger.info(f"Sending prompt: {prompt}")
