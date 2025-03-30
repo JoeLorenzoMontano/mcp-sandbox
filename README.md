@@ -1,13 +1,13 @@
 # MCP Agent Framework
 
-A Docker-based framework for designing and implementing AI agent workflows using the Multimodal Chat Protocol (MCP) with local Ollama models.
+A Docker-based framework for designing and implementing AI agent workflows using the Multimodal Chat Protocol (MCP) with local Ollama models and Smithery.ai integration.
 
 ## System Architecture
 
 This system consists of three main components:
 
 1. **MCP Server**: A service that implements the MCP protocol and communicates with Ollama for model responses
-2. **Workflow Orchestrator**: Manages multi-step workflows by connecting different MCP servers
+2. **Workflow Orchestrator**: Manages multi-step workflows by connecting different MCP servers and Smithery.ai agents
 3. **MCP Client**: A web interface to create and execute agent workflows
 
 ## Prerequisites
@@ -57,6 +57,7 @@ Open your browser and navigate to http://localhost:8002
 - Workflow Orchestrator: http://localhost:8001
   - `/v1/workflow` - Workflow execution endpoint
   - `/v1/mcp-servers` - List available MCP servers
+  - `/v1/test-smithery` - Test connection to a Smithery.ai agent
 
 - MCP Client: http://localhost:8002
   - Web interface for creating and running workflows
@@ -84,10 +85,26 @@ Edit the `.env` file and add external MCP servers to the `EXTERNAL_MCP_SERVERS` 
 1. Get an API key from Smithery.ai
 2. Add your API key to the `.env` file
 3. In the web interface, you'll see additional fields for Smithery-specific configuration:
-   - Smithery Agent ID: The ID of the specific agent you want to use
+   - Smithery Agent ID: The ID of the specific agent you want to use (e.g., "@turkyden/weather")
    - Smithery Parameters: JSON object with additional parameters for the agent
 
-The system will automatically fetch available agents from the Smithery registry and let you incorporate them into your workflows.
+The system integrates with Smithery.ai agents using the WebSocket MCP protocol, allowing for real-time interaction with specialized agents.
+
+### Weather Agent Example
+
+A complete example of integrating with the Smithery.ai weather agent is included:
+
+```bash
+# Run the example script to test weather information
+cd services/workflow_orchestrator
+./weather_example.py "San Francisco"
+
+# Run the full workflow example
+cd examples
+./run_weather_workflow.py "New York"
+```
+
+See the `services/workflow_orchestrator/README.md` file for detailed information on the Smithery.ai integration.
 
 ### Creating Custom Workflows
 

@@ -8,6 +8,9 @@ import logging
 import asyncio
 from dotenv import load_dotenv
 
+# Import Smithery client module
+from smithery_client import connect_to_smithery, call_smithery_agent
+
 # Load environment variables
 load_dotenv()
 
@@ -82,76 +85,127 @@ async def run_workflow(request: WorkflowRequest):
         for i, step in enumerate(request.steps):
             logger.info(f"Executing workflow step {i+1}: {step.name}")
             
-            # Determine which MCP server to use
-            mcp_server = step.mcp_server or MCP_SERVER_URL
-            
-            # Format the MCP request
-            messages = []
-            
-            # Add any predefined messages from the step
-            for msg in step.messages:
+            # Check if this step uses a Smithery agent
+            if step.smithery_agent_id:
+                if not SMITHERY_ENABLED:
+                    logger.error("Smithery is not enabled (API key not configured)")
+                    raise HTTPException(status_code=400, detail="Smithery integration is not enabled")
+                
+                logger.info(f"Using Smithery agent for step {step.name}: {step.smithery_agent_id}")
+                
+                try:
+                    # Call the Smithery agent directly using WebSockets
+                    smithery_response = await call_smithery_agent(
+                        agent_id=step.smithery_agent_id,
+                        prompt=current_context,
+                        params=step.smithery_params
+                    )
+                    
+                    step_result = {
+                        "step_name": step.name,
+                        "mcp_server": f"smithery:{step.smithery_agent_id}",
+                        "response": {
+                            "message": {
+                                "role": "assistant",
+                                "content": {
+                                    "content_type": "multimodal/html",
+                                    "parts": [
+                                        {
+                                            "type": "text",
+                                            "text": smithery_response["response"]
+                                        }
+                                    ]
+                                }
+                            }
+                        },
+                        "smithery_response": smithery_response
+                    }
+                    
+                    # Update the context with the Smithery response
+                    current_context = smithery_response["response"]
+                    
+                except Exception as smithery_error:
+                    logger.error(f"Smithery agent error: {str(smithery_error)}")
+                    raise HTTPException(
+                        status_code=500, 
+                        detail=f"Error from Smithery agent for step {step.name}: {str(smithery_error)}"
+                    )
+            else:
+                # Regular MCP server flow
+                # Determine which MCP server to use
+                mcp_server = step.mcp_server or MCP_SERVER_URL
+                
+                # Format the MCP request
+                messages = []
+                
+                # Add any predefined messages from the step
+                for msg in step.messages:
+                    messages.append(MCPMessage(
+                        role=msg.get("role", "system"),
+                        content=MCPContent(
+                            content_type=msg.get("content_type", "multimodal/html"),
+                            parts=[{"type": "text", "text": msg.get("content", "")}]
+                        )
+                    ))
+                
+                # Add the current context as a new message
                 messages.append(MCPMessage(
-                    role=msg.get("role", "system"),
+                    role=step.role,
                     content=MCPContent(
-                        content_type=msg.get("content_type", "multimodal/html"),
-                        parts=[{"type": "text", "text": msg.get("content", "")}]
+                        content_type="multimodal/html",
+                        parts=[{"type": "text", "text": current_context}]
                     )
                 ))
-            
-            # Add the current context as a new message
-            messages.append(MCPMessage(
-                role=step.role,
-                content=MCPContent(
-                    content_type="multimodal/html",
-                    parts=[{"type": "text", "text": current_context}]
-                )
-            ))
-            
-            # Create the MCP request
-            mcp_request = MCPRequest(
-                messages=messages,
-                tools=step.tools
-            )
-            
-            # Prepare headers for the request
-            headers = {}
-            
-            # Check if this is a Smithery.ai server
-            if SMITHERY_ENABLED and SMITHERY_REGISTRY_URL in mcp_server:
-                logger.info(f"Using Smithery.ai authentication for {mcp_server}")
-                headers["Authorization"] = f"Bearer {SMITHERY_API_KEY}"
-            
-            # Send the request to the MCP server
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{mcp_server}/v1/chat",
-                    json=mcp_request.dict(),
-                    headers=headers,
-                    timeout=60.0
+                
+                # Create the MCP request
+                mcp_request = MCPRequest(
+                    messages=messages,
+                    tools=step.tools
                 )
                 
-                if response.status_code != 200:
-                    logger.error(f"MCP server error: {response.status_code} - {response.text}")
-                    raise HTTPException(status_code=response.status_code, detail=f"Error from MCP server for step {step.name}")
+                # Prepare headers for the request
+                headers = {}
                 
-                mcp_response = response.json()
+                # Check if this is a Smithery.ai server
+                if SMITHERY_ENABLED and SMITHERY_REGISTRY_URL in mcp_server:
+                    logger.info(f"Using Smithery.ai authentication for {mcp_server}")
+                    headers["Authorization"] = f"Bearer {SMITHERY_API_KEY}"
+                
+                # Send the request to the MCP server
+                async with httpx.AsyncClient() as client:
+                    response = await client.post(
+                        f"{mcp_server}/v1/chat",
+                        json=mcp_request.dict(),
+                        headers=headers,
+                        timeout=60.0
+                    )
+                    
+                    if response.status_code != 200:
+                        logger.error(f"MCP server error: {response.status_code} - {response.text}")
+                        raise HTTPException(
+                            status_code=response.status_code, 
+                            detail=f"Error from MCP server for step {step.name}"
+                        )
+                    
+                    mcp_response = response.json()
+                
+                # Extract the text response
+                step_result = {
+                    "step_name": step.name,
+                    "mcp_server": mcp_server,
+                    "response": mcp_response
+                }
+                
+                # Update the context for the next step
+                response_text = ""
+                for part in mcp_response.get("message", {}).get("content", {}).get("parts", []):
+                    if part.get("type") == "text":
+                        response_text += part.get("text", "")
+                
+                current_context = response_text
             
-            # Extract the text response
-            step_result = {
-                "step_name": step.name,
-                "mcp_server": mcp_server,
-                "response": mcp_response
-            }
+            # Add the result to our results list
             results.append(step_result)
-            
-            # Update the context for the next step
-            response_text = ""
-            for part in mcp_response.get("message", {}).get("content", {}).get("parts", []):
-                if part.get("type") == "text":
-                    response_text += part.get("text", "")
-            
-            current_context = response_text
-            
             logger.info(f"Completed step {i+1}: {step.name}")
             
         logger.info("Workflow completed successfully")
@@ -205,6 +259,29 @@ async def list_mcp_servers():
         servers.extend(smithery_servers)
         
     return {"servers": servers}
+
+class SmitheryTestRequest(BaseModel):
+    agent_id: str
+    prompt: str
+    params: Optional[Dict[str, Any]] = None
+
+@app.post("/v1/test-smithery")
+async def test_smithery_connection(request: SmitheryTestRequest):
+    """Test connection to a Smithery.ai agent"""
+    if not SMITHERY_ENABLED:
+        raise HTTPException(status_code=400, detail="Smithery integration is not enabled")
+    
+    try:
+        logger.info(f"Testing connection to Smithery agent: {request.agent_id}")
+        response = await call_smithery_agent(
+            agent_id=request.agent_id,
+            prompt=request.prompt,
+            params=request.params
+        )
+        return response
+    except Exception as e:
+        logger.error(f"Error testing Smithery connection: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Smithery connection error: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,0 +1,25 @@
+{
+  "steps": [
+    {
+      "name": "Get Weather Information",
+      "role": "user",
+      "smithery_agent_id": "@turkyden/weather",
+      "smithery_params": {
+        "temperature": 0.7
+      }
+    },
+    {
+      "name": "Summarize Weather",
+      "role": "user",
+      "mcp_server": "http://mcp_server:8000",
+      "messages": [
+        {
+          "role": "system",
+          "content_type": "multimodal/html",
+          "content": "You are a helpful assistant that summarizes weather information into a concise format. Present the weather in a user-friendly way."
+        }
+      ]
+    }
+  ],
+  "input": "What's the weather like in New York?"
+}
