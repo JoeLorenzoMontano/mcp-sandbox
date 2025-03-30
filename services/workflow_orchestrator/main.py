@@ -27,6 +27,11 @@ EXTERNAL_MCP_SERVERS = [
     if server.strip()
 ]
 
+# Smithery.ai Configuration
+SMITHERY_API_KEY = os.getenv("SMITHERY_API_KEY", "")
+SMITHERY_REGISTRY_URL = os.getenv("SMITHERY_REGISTRY_URL", "https://registry.smithery.ai")
+SMITHERY_ENABLED = bool(SMITHERY_API_KEY)
+
 app = FastAPI(title="Workflow Orchestrator")
 
 # MCP and Workflow Schemas
@@ -51,6 +56,9 @@ class WorkflowStep(BaseModel):
     role: str = "user"  # "user" or "system"
     messages: List[Dict[str, Any]] = []
     tools: Optional[List[Dict[str, Any]]] = None
+    # Smithery.ai specific fields
+    smithery_agent_id: Optional[str] = None
+    smithery_params: Optional[Dict[str, Any]] = None
     
 class WorkflowRequest(BaseModel):
     steps: List[WorkflowStep]
@@ -105,11 +113,20 @@ async def run_workflow(request: WorkflowRequest):
                 tools=step.tools
             )
             
+            # Prepare headers for the request
+            headers = {}
+            
+            # Check if this is a Smithery.ai server
+            if SMITHERY_ENABLED and SMITHERY_REGISTRY_URL in mcp_server:
+                logger.info(f"Using Smithery.ai authentication for {mcp_server}")
+                headers["Authorization"] = f"Bearer {SMITHERY_API_KEY}"
+            
             # Send the request to the MCP server
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{mcp_server}/v1/chat",
                     json=mcp_request.dict(),
+                    headers=headers,
                     timeout=60.0
                 )
                 
@@ -144,9 +161,49 @@ async def run_workflow(request: WorkflowRequest):
         logger.error(f"Error processing workflow: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
+async def fetch_smithery_registry():
+    """Fetch available MCP servers from Smithery.ai registry"""
+    if not SMITHERY_ENABLED:
+        return []
+        
+    try:
+        headers = {"Authorization": f"Bearer {SMITHERY_API_KEY}"}
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{SMITHERY_REGISTRY_URL}/agents",
+                headers=headers,
+                timeout=10.0
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"Smithery registry error: {response.status_code} - {response.text}")
+                return []
+                
+            registry_data = response.json()
+            
+            # Extract MCP server URLs from the registry data
+            # Format may vary - adjust parsing based on actual Smithery API response
+            smithery_servers = []
+            for agent in registry_data.get("agents", []):
+                if "endpoint" in agent:
+                    smithery_servers.append(agent["endpoint"])
+                    
+            return smithery_servers
+            
+    except Exception as e:
+        logger.error(f"Error fetching Smithery registry: {str(e)}")
+        return []
+
 @app.get("/v1/mcp-servers")
 async def list_mcp_servers():
+    # Start with local and configured external servers
     servers = [MCP_SERVER_URL] + EXTERNAL_MCP_SERVERS
+    
+    # Add Smithery servers if enabled
+    if SMITHERY_ENABLED:
+        smithery_servers = await fetch_smithery_registry()
+        servers.extend(smithery_servers)
+        
     return {"servers": servers}
 
 if __name__ == "__main__":

@@ -131,6 +131,18 @@ with open(index_html_path, "w") as f:
                     <label for="step-0-server">MCP Server (leave blank for default):</label>
                     <input type="text" id="step-0-server" name="steps[0][mcp_server]">
                 </div>
+                
+                <div class="smithery-section">
+                    <h4>Smithery.ai Options</h4>
+                    <div class="form-group">
+                        <label for="step-0-smithery-id">Smithery Agent ID (optional):</label>
+                        <input type="text" id="step-0-smithery-id" name="steps[0][smithery_agent_id]">
+                    </div>
+                    <div class="form-group">
+                        <label for="step-0-smithery-params">Smithery Parameters (JSON, optional):</label>
+                        <textarea id="step-0-smithery-params" name="steps[0][smithery_params]" rows="3" placeholder='{"temperature": 0.7}'></textarea>
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -171,6 +183,18 @@ with open(index_html_path, "w") as f:
                     <label for="step-${stepCount}-server">MCP Server (leave blank for default):</label>
                     <input type="text" id="step-${stepCount}-server" name="steps[${stepCount}][mcp_server]">
                 </div>
+                
+                <div class="smithery-section">
+                    <h4>Smithery.ai Options</h4>
+                    <div class="form-group">
+                        <label for="step-${stepCount}-smithery-id">Smithery Agent ID (optional):</label>
+                        <input type="text" id="step-${stepCount}-smithery-id" name="steps[${stepCount}][smithery_agent_id]">
+                    </div>
+                    <div class="form-group">
+                        <label for="step-${stepCount}-smithery-params">Smithery Parameters (JSON, optional):</label>
+                        <textarea id="step-${stepCount}-smithery-params" name="steps[${stepCount}][smithery_params]" rows="3" placeholder='{"temperature": 0.7}'></textarea>
+                    </div>
+                </div>
             `;
             
             workflowSteps.appendChild(newStep);
@@ -192,10 +216,25 @@ with open(index_html_path, "w") as f:
                 
                 // Parse step data
                 for (let i = 0; i < stepCount; i++) {
+                    const smitheryParams = formData.get(`steps[${i}][smithery_params]`);
+                    let parsedSmitheryParams = null;
+                    
+                    // Parse the Smithery params if provided
+                    if (smitheryParams && smitheryParams.trim()) {
+                        try {
+                            parsedSmitheryParams = JSON.parse(smitheryParams);
+                        } catch (err) {
+                            responseDiv.textContent = `Error: Invalid JSON in Smithery parameters for step ${i+1}`;
+                            return;
+                        }
+                    }
+                    
                     steps.push({
                         name: formData.get(`steps[${i}][name]`),
                         role: formData.get(`steps[${i}][role]`),
-                        mcp_server: formData.get(`steps[${i}][mcp_server]`) || null
+                        mcp_server: formData.get(`steps[${i}][mcp_server]`) || null,
+                        smithery_agent_id: formData.get(`steps[${i}][smithery_agent_id]`) || null,
+                        smithery_params: parsedSmitheryParams
                     });
                 }
                 
@@ -236,6 +275,47 @@ with open(index_html_path, "w") as f:
 """)
 
 # Create API endpoints
+@app.get("/smithery-agents")
+async def get_smithery_agents():
+    try:
+        # Get available MCP servers which includes Smithery servers
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{ORCHESTRATOR_URL}/v1/mcp-servers")
+            
+            if response.status_code != 200:
+                raise HTTPException(status_code=response.status_code, detail="Error fetching MCP servers")
+            
+            # This might need adjustment based on how smithery agents are stored
+            server_data = response.json()
+            smithery_servers = [
+                server for server in server_data.get("servers", [])
+                if "smithery.ai" in server 
+            ]
+            
+            if not smithery_servers:
+                return {"agents": []}
+                
+            # Try to fetch agents from the Smithery registry endpoint
+            # Note: Adjust this based on the actual Smithery API
+            agents = []
+            async with httpx.AsyncClient() as registry_client:
+                for server in smithery_servers:
+                    registry_response = await registry_client.get(
+                        f"{server}/agents",
+                        headers={"Authorization": f"Bearer {os.getenv('SMITHERY_API_KEY', '')}"},
+                        timeout=10.0
+                    )
+                    
+                    if registry_response.status_code == 200:
+                        agent_data = registry_response.json()
+                        agents.extend(agent_data.get("agents", []))
+            
+            return {"agents": agents}
+                
+    except Exception as e:
+        logger.error(f"Error fetching Smithery agents: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})

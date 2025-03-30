@@ -28,6 +28,8 @@ Modify the following settings as needed:
 
 - `OLLAMA_BASE_URL`: URL to your Ollama instance (default: http://host.docker.internal:11434)
 - `OLLAMA_MODEL`: Default model to use (default: llama3:latest)
+- `SMITHERY_API_KEY`: API key for Smithery.ai integration
+- `SMITHERY_REGISTRY_URL`: URL for the Smithery.ai registry (default: https://registry.smithery.ai)
 - `EXTERNAL_MCP_SERVERS`: Optional comma-separated list of external MCP servers
 
 ## Getting Started
@@ -76,6 +78,16 @@ Open your browser and navigate to http://localhost:8002
 ### Adding External MCP Servers
 
 Edit the `.env` file and add external MCP servers to the `EXTERNAL_MCP_SERVERS` variable as a comma-separated list.
+
+### Using Smithery.ai Agents
+
+1. Get an API key from Smithery.ai
+2. Add your API key to the `.env` file
+3. In the web interface, you'll see additional fields for Smithery-specific configuration:
+   - Smithery Agent ID: The ID of the specific agent you want to use
+   - Smithery Parameters: JSON object with additional parameters for the agent
+
+The system will automatically fetch available agents from the Smithery registry and let you incorporate them into your workflows.
 
 ### Creating Custom Workflows
 
