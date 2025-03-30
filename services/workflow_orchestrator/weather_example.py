@@ -10,6 +10,7 @@ import traceback
 import smithery
 import mcp
 from mcp.client.websocket import websocket_client
+from mcp.types import Content, Message, Part
 from dotenv import load_dotenv
 import logging
 import argparse
@@ -77,44 +78,53 @@ async def get_weather(location, api_key=None, debug=False):
                 logger.info("Listing available tools...")
                 tools_result = await session.list_tools()
                 
-                # Handle different possible return formats
+                # Handle the ListToolsResult format from the MCP API
                 if tools_result:
                     logger.debug(f"Tools result type: {type(tools_result)}")
                     logger.debug(f"Tools result: {tools_result}")
                     
-                    # Handle various formats of tool results
+                    # Extract tools from the ListToolsResult
                     tool_names = []
-                    if isinstance(tools_result, list):
+                    
+                    # Check if it has a 'tools' attribute (most likely case based on the debug output)
+                    if hasattr(tools_result, 'tools') and tools_result.tools:
+                        for tool in tools_result.tools:
+                            if hasattr(tool, 'name'):
+                                tool_names.append(tool.name)
+                            elif isinstance(tool, dict) and 'name' in tool:
+                                tool_names.append(tool['name'])
+                    # Fall back to other formats if needed
+                    elif isinstance(tools_result, list):
                         for tool in tools_result:
                             if hasattr(tool, 'name'):
                                 tool_names.append(tool.name)
                             elif isinstance(tool, dict) and 'name' in tool:
                                 tool_names.append(tool['name'])
-                            elif isinstance(tool, tuple) and len(tool) > 0:
-                                tool_names.append(str(tool[0]))
                     elif isinstance(tools_result, tuple):
                         # If it's a tuple, try to convert to strings
                         tool_names = [str(t) for t in tools_result]
-                        
-                    if not tool_names:
+                    
+                    # Display the results
+                    if tool_names:
+                        logger.info(f"Available tools: {', '.join(tool_names)}")
+                    else:
                         logger.warning("Could not extract tool names from result")
                         logger.warning(f"Raw tools result: {tools_result}")
-                        
-                    logger.info(f"Available tools: {', '.join(tool_names)}")
+                        logger.info("Available tools: (none extracted)")
                 else:
                     logger.info("No tools available")
                 
                 # Create a prompt for the weather
                 prompt = f"What's the weather like in {location}?"
                 
-                # Create an MCP message with the prompt
+                # Create an MCP message with the prompt using the correct imports
                 logger.info("Creating MCP message...")
-                message = mcp.Message(
+                message = Message(
                     role="user",
-                    content=mcp.Content(
+                    content=Content(
                         content_type="text",
                         parts=[
-                            mcp.Part(
+                            Part(
                                 type="text", 
                                 text=prompt
                             )

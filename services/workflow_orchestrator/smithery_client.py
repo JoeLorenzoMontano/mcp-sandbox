@@ -4,6 +4,7 @@ import traceback
 import smithery
 import mcp
 from mcp.client.websocket import websocket_client
+from mcp.types import Content, Message, Part
 from typing import Dict, Any, Optional, List
 
 # Configure logging
@@ -86,30 +87,39 @@ async def connect_to_smithery(agent_id: str, params: Optional[Dict[str, Any]] = 
                 logger.info("Listing available tools...")
                 tools_result = await session.list_tools()
                 
-                # Handle different possible return formats
+                # Handle the ListToolsResult format from the MCP API
                 if tools_result:
                     logger.debug(f"Tools result type: {type(tools_result)}")
                     logger.debug(f"Tools result: {tools_result}")
                     
-                    # Handle various formats of tool results
+                    # Extract tools from the ListToolsResult
                     available_tools = []
-                    if isinstance(tools_result, list):
+                    
+                    # Check if it has a 'tools' attribute (most likely case based on the debug output)
+                    if hasattr(tools_result, 'tools') and tools_result.tools:
+                        for tool in tools_result.tools:
+                            if hasattr(tool, 'name'):
+                                available_tools.append(tool.name)
+                            elif isinstance(tool, dict) and 'name' in tool:
+                                available_tools.append(tool['name'])
+                    # Fall back to other formats if needed
+                    elif isinstance(tools_result, list):
                         for tool in tools_result:
                             if hasattr(tool, 'name'):
                                 available_tools.append(tool.name)
                             elif isinstance(tool, dict) and 'name' in tool:
                                 available_tools.append(tool['name'])
-                            elif isinstance(tool, tuple) and len(tool) > 0:
-                                available_tools.append(str(tool[0]))
                     elif isinstance(tools_result, tuple):
                         # If it's a tuple, try to convert to strings
                         available_tools = [str(t) for t in tools_result]
                     
-                    if not available_tools:
+                    # Display the results
+                    if available_tools:
+                        logger.info(f"Available tools from Smithery agent: {', '.join(available_tools)}")
+                    else:
                         logger.warning("Could not extract tool names from result")
                         logger.warning(f"Raw tools result: {tools_result}")
-                        
-                    logger.info(f"Available tools from Smithery agent: {', '.join(available_tools)}")
+                        logger.info("Available tools from Smithery agent: (none extracted)")
                 else:
                     logger.info("No tools available from Smithery agent")
                     available_tools = []
@@ -206,32 +216,41 @@ async def call_smithery_agent(agent_id: str, prompt: str,
                 logger.info("Listing available tools...")
                 tools_result = await session.list_tools()
                 
-                # Handle different possible return formats
+                # Handle the ListToolsResult format from the MCP API
                 if tools_result:
                     logger.debug(f"Tools result type: {type(tools_result)}")
                     logger.debug(f"Tools result: {tools_result}")
                     
-                    # Handle various formats of tool results
+                    # Extract tools from the ListToolsResult
                     available_tools = []
-                    if isinstance(tools_result, list):
+                    
+                    # Check if it has a 'tools' attribute (most likely case based on the debug output)
+                    if hasattr(tools_result, 'tools') and tools_result.tools:
+                        for tool in tools_result.tools:
+                            if hasattr(tool, 'name'):
+                                available_tools.append(tool.name)
+                            elif isinstance(tool, dict) and 'name' in tool:
+                                available_tools.append(tool['name'])
+                    # Fall back to other formats if needed
+                    elif isinstance(tools_result, list):
                         for tool in tools_result:
                             if hasattr(tool, 'name'):
                                 available_tools.append(tool.name)
                             elif isinstance(tool, dict) and 'name' in tool:
                                 available_tools.append(tool['name'])
-                            elif isinstance(tool, tuple) and len(tool) > 0:
-                                available_tools.append(str(tool[0]))
                     elif isinstance(tools_result, tuple):
                         # If it's a tuple, try to convert to strings
                         available_tools = [str(t) for t in tools_result]
                     
-                    if not available_tools:
+                    # Display the results
+                    if available_tools:
+                        logger.info(f"Available tools: {', '.join(available_tools)}")
+                    else:
                         logger.warning("Could not extract tool names from result")
                         logger.warning(f"Raw tools result: {tools_result}")
-                        
-                    logger.info(f"Available tools from Smithery agent: {', '.join(available_tools)}")
+                        logger.info("Available tools: (none extracted)")
                 else:
-                    logger.info("No tools available from Smithery agent")
+                    logger.info("No tools available")
                     available_tools = []
                 
                 # Send the prompt to the agent
@@ -239,12 +258,12 @@ async def call_smithery_agent(agent_id: str, prompt: str,
                 
                 # Create an MCP message with the prompt
                 logger.info("Creating MCP message...")
-                message = mcp.Message(
+                message = Message(
                     role="user",
-                    content=mcp.Content(
+                    content=Content(
                         content_type="text",
                         parts=[
-                            mcp.Part(
+                            Part(
                                 type="text", 
                                 text=prompt
                             )

@@ -12,6 +12,7 @@ import traceback
 import smithery
 import mcp
 from mcp.client.websocket import websocket_client
+from mcp.types import Content, Message, Part
 from dotenv import load_dotenv
 import logging
 import json
@@ -97,44 +98,54 @@ async def test_smithery_connection(agent_id, prompt, api_key=None, params=None, 
                 logger.info("Listing available tools...")
                 tools_result = await session.list_tools()
                 
-                # Handle different possible return formats
+                # Handle the ListToolsResult format from the MCP API
                 if tools_result:
                     logger.debug(f"Tools result type: {type(tools_result)}")
                     logger.debug(f"Tools result: {tools_result}")
                     
-                    # Handle various formats of tool results
+                    # Extract tools from the ListToolsResult
                     tool_names = []
-                    if isinstance(tools_result, list):
+                    
+                    # Check if it has a 'tools' attribute (most likely case based on the debug output)
+                    if hasattr(tools_result, 'tools') and tools_result.tools:
+                        for tool in tools_result.tools:
+                            if hasattr(tool, 'name'):
+                                tool_names.append(tool.name)
+                            elif isinstance(tool, dict) and 'name' in tool:
+                                tool_names.append(tool['name'])
+                    # Fall back to other formats if needed
+                    elif isinstance(tools_result, list):
                         for tool in tools_result:
                             if hasattr(tool, 'name'):
                                 tool_names.append(tool.name)
                             elif isinstance(tool, dict) and 'name' in tool:
                                 tool_names.append(tool['name'])
-                            elif isinstance(tool, tuple) and len(tool) > 0:
-                                tool_names.append(str(tool[0]))
                     elif isinstance(tools_result, tuple):
                         # If it's a tuple, try to convert to strings
                         tool_names = [str(t) for t in tools_result]
                     
-                    if not tool_names:
+                    # Display the results
+                    if tool_names:
+                        logger.info(f"Available tools: {', '.join(tool_names)}")
+                    else:
                         logger.warning("Could not extract tool names from result")
                         logger.warning(f"Raw tools result: {tools_result}")
-                        
-                    logger.info(f"Available tools: {', '.join(tool_names)}")
+                        logger.info("Available tools: (none extracted)")
                 else:
                     logger.info("No tools available")
+                    tool_names = []
                 
                 # Send a message to the agent
                 logger.info(f"Sending prompt: {prompt}")
                 
                 # Create an MCP message with the prompt
                 logger.info("Creating MCP message...")
-                message = mcp.Message(
+                message = Message(
                     role="user",
-                    content=mcp.Content(
+                    content=Content(
                         content_type="text",
                         parts=[
-                            mcp.Part(
+                            Part(
                                 type="text", 
                                 text=prompt
                             )
@@ -148,6 +159,7 @@ async def test_smithery_connection(agent_id, prompt, api_key=None, params=None, 
                 
                 # Extract text from the response
                 response_text = ""
+                logger.info("Processing response...")
                 for part in response.content.parts:
                     if part.type == "text":
                         response_text += part.text
